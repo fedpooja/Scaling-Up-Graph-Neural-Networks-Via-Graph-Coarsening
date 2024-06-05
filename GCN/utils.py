@@ -4,42 +4,44 @@ from torch_geometric.utils import to_dense_adj
 from graph_coarsening.coarsening_utils import *
 from torch_geometric.datasets import Coauthor
 from torch_geometric.datasets import CitationFull
+import numpy as np
+import gsp
 
 def one_hot(x, class_count):
     return torch.eye(class_count)[x, :]
 
 def extract_components(H):
-        if H.A.shape[0] != H.A.shape[1]:
-            H.logger.error('Inconsistent shape to extract components. '
-                           'Square matrix required.')
-            return None
+    if H.A.shape[0] != H.A.shape[1]:
+        H.logger.error('Inconsistent shape to extract components. '
+                       'Square matrix required.')
+        return None
 
-        if H.is_directed():
-            raise NotImplementedError('Directed graphs not supported yet.')
+    if H.is_directed():
+        raise NotImplementedError('Directed graphs not supported yet.')
 
-        graphs = []
+    graphs = []
 
-        visited = np.zeros(H.A.shape[0], dtype=bool)
+    visited = np.zeros(H.A.shape[0], dtype=bool)  # Changed np.bool to bool
 
-        while not visited.all():
-            stack = set([np.nonzero(~visited)[0][0]])
-            comp = []
+    while not visited.all():
+        stack = set([np.nonzero(~visited)[0][0]])
+        comp = []
 
-            while len(stack):
-                v = stack.pop()
-                if not visited[v]:
-                    comp.append(v)
-                    visited[v] = True
+        while len(stack):
+            v = stack.pop()
+            if not visited[v]:
+                comp.append(v)
+                visited[v] = True
 
-                    stack.update(set([idx for idx in H.A[v, :].nonzero()[1]
-                                      if not visited[idx]]))
+                stack.update(set([idx for idx in H.A[v, :].nonzero()[1]
+                                  if not visited[idx]]))
 
-            comp = sorted(comp)
-            G = H.subgraph(comp)
-            G.info = {'orig_idx': comp}
-            graphs.append(G)
+        comp = sorted(comp)
+        G = H.subgraph(comp)
+        G.info = {'orig_idx': comp}
+        graphs.append(G)
 
-        return graphs
+    return graphs
 
 def coarsening(dataset, coarsening_ratio, coarsening_method):
     if dataset == 'dblp':
@@ -71,7 +73,7 @@ def index_to_mask(index, size):
     return mask
 
 def splits(data, num_classes, exp):
-    if exp!='fixed':
+    if exp != 'fixed':
         indices = []
         for i in range(num_classes):
             index = (data.y == i).nonzero().view(-1)
@@ -124,7 +126,7 @@ def load_data(dataset, candidate, C_list, Gc_list, exp):
         H_labels = labels[keep]
         H_train_mask = train_mask[keep]
         H_val_mask = val_mask[keep]
-        if len(H.info['orig_idx']) > 10 and torch.sum(H_train_mask)+torch.sum(H_val_mask) > 0:
+        if len(H.info['orig_idx']) > 10 and torch.sum(H_train_mask) + torch.sum(H_val_mask) > 0:
             train_labels = one_hot(H_labels, n_classes)
             train_labels[~H_train_mask] = torch.Tensor([0 for _ in range(n_classes)])
             val_labels = one_hot(H_labels, n_classes)
@@ -132,13 +134,13 @@ def load_data(dataset, candidate, C_list, Gc_list, exp):
             C = C_list[number]
             Gc = Gc_list[number]
 
-            new_train_mask = torch.BoolTensor(np.sum(C.dot(train_labels), axis=1))
+            new_train_mask = torch.BoolTensor(np.sum(C.dot(train_labels), axis=1))  # Changed to torch.BoolTensor
             mix_label = torch.FloatTensor(C.dot(train_labels))
             mix_label[mix_label > 0] = 1
             mix_mask = torch.sum(mix_label, dim=1)
             new_train_mask[mix_mask > 1] = False
 
-            new_val_mask = torch.BoolTensor(np.sum(C.dot(val_labels), axis=1))
+            new_val_mask = torch.BoolTensor(np.sum(C.dot(val_labels), axis=1))  # Changed to torch.BoolTensor
             mix_label = torch.FloatTensor(C.dot(val_labels))
             mix_label[mix_label > 0] = 1
             mix_mask = torch.sum(mix_label, dim=1)
@@ -160,7 +162,7 @@ def load_data(dataset, candidate, C_list, Gc_list, exp):
                 coarsen_col = np.concatenate([coarsen_col, current_col], axis=0)
             coarsen_node += Gc.W.shape[0]
 
-        elif torch.sum(H_train_mask)+torch.sum(H_val_mask)>0:
+        elif torch.sum(H_train_mask) + torch.sum(H_val_mask) > 0:
 
             coarsen_features = torch.cat([coarsen_features, H_features], dim=0)
             coarsen_train_labels = torch.cat([coarsen_train_labels, H_labels.float()], dim=0)
@@ -185,5 +187,3 @@ def load_data(dataset, candidate, C_list, Gc_list, exp):
     coarsen_val_labels = coarsen_val_labels.long()
 
     return data, coarsen_features, coarsen_train_labels, coarsen_train_mask, coarsen_val_labels, coarsen_val_mask, coarsen_edge
-
-
